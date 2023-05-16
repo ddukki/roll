@@ -1,5 +1,9 @@
 package main
 
+import (
+	"fmt"
+)
+
 // tokenize splits the token into parts by op and builds a tokenized graph.
 func tokenize(s string) expr {
 	return tokenizeExpr(&tokenExpr{token: s})
@@ -12,14 +16,13 @@ func tokenizeExpr(e expr) expr {
 		case *binaryExpr:
 			t.lhs = tokenizeExpr(t.lhs)
 			t.rhs = tokenizeExpr(t.rhs)
-			e = t
-		case *unaryExpr:
-			t.val = tokenizeExpr(t.val)
-			e = t
+			t.ValidateTokens()
+
 		case *tokenExpr:
 			e = t.Tokenize(ops[p])
+		case *litValExpr:
 		default:
-			panic("unknown expr type")
+			panic(fmt.Sprintf("unknown expr type: %T", e))
 		}
 	}
 

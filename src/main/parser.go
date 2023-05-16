@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -11,8 +12,7 @@ func parse(e expr) expr {
 	case *binaryExpr:
 		t.lhs = parse(t.lhs)
 		t.rhs = parse(t.rhs)
-	case *unaryExpr:
-		t.val = parse(t.val)
+	case *litValExpr:
 	case *tokenExpr:
 		valStr := strings.TrimSpace(t.token)
 		val64, err := strconv.ParseInt(valStr, 10, 32)
@@ -21,7 +21,7 @@ func parse(e expr) expr {
 		}
 		e = &litValExpr{val: int(val64)}
 	default:
-		panic("unknown expr type")
+		panic(fmt.Sprintf("unknown expr type: %T", e))
 	}
 
 	return e
