@@ -16,10 +16,10 @@ func tokenizeExpr(e expr) expr {
 		case *binaryExpr:
 			t.lhs = tokenizeExpr(t.lhs)
 			t.rhs = tokenizeExpr(t.rhs)
-			t.ValidateTokens()
-
+			t.Validate()
 		case *tokenExpr:
 			e = t.Tokenize(ops[p])
+			e.Validate()
 		case *litValExpr:
 		default:
 			panic(fmt.Sprintf("unknown expr type: %T", e))
