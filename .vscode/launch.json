@@ -12,7 +12,7 @@
       "mode": "debug",
       "program": "${workspaceFolder}/src/roll",
       "args": [
-        "d20"
+        "4L6"
       ]
 
     }
