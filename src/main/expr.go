@@ -7,6 +7,7 @@ import (
 
 type expr interface {
 	Value() int
+	Validate()
 }
 
 var _ expr = (*binaryExpr)(nil)
@@ -21,7 +22,7 @@ func (b *binaryExpr) Value() int {
 	return b.op.Apply(b.lhs.Value(), b.rhs.Value())
 }
 
-func (b *binaryExpr) ValidateTokens() {
+func (b *binaryExpr) Validate() {
 	if _, ok := b.op.(*RollOp); ok {
 		if texpr, ok := b.lhs.(*tokenExpr); ok {
 			if strings.TrimSpace(texpr.token) == "" {
@@ -41,6 +42,8 @@ func (lv *litValExpr) Value() int {
 	return lv.val
 }
 
+func (lv *litValExpr) Validate() {}
+
 var _ expr = (*tokenExpr)(nil)
 
 type tokenExpr struct {
@@ -50,6 +53,8 @@ type tokenExpr struct {
 func (t *tokenExpr) Value() int {
 	return 0
 }
+
+func (t *tokenExpr) Validate() {}
 
 // Tokenize tokenizes the stored token once, breaking the token with the given
 // op. If the given op is not present in the stored token, the token expression
