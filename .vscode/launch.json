@@ -11,7 +11,7 @@
       "mode": "debug",
       "program": "${workspaceFolder}/src/main",
       "args": [
-        "d4+3d4"
+        "4+3d4+d7"
       ]
 
     }

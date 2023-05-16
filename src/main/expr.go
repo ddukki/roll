@@ -21,15 +21,14 @@ func (b *binaryExpr) Value() int {
 	return b.op.Apply(b.lhs.Value(), b.rhs.Value())
 }
 
-var _ expr = (*unaryExpr)(nil)
-
-type unaryExpr struct {
-	val expr
-	op  unaryOp
-}
-
-func (u *unaryExpr) Value() int {
-	return u.op.Apply(u.val.Value())
+func (b *binaryExpr) ValidateTokens() {
+	if _, ok := b.op.(*RollOp); ok {
+		if texpr, ok := b.lhs.(*tokenExpr); ok {
+			if strings.TrimSpace(texpr.token) == "" {
+				b.lhs = &litValExpr{val: 1}
+			}
+		}
+	}
 }
 
 var _ expr = (*litValExpr)(nil)
@@ -68,10 +67,6 @@ func (t *tokenExpr) Tokenize(o op) expr {
 		rhs := &tokenExpr{t.token[ind+1:]}
 
 		return &binaryExpr{lhs: lhs.Tokenize(o), rhs: rhs.Tokenize(o), op: typ}
-	case unaryOp:
-		val := &tokenExpr{t.token[ind+1:]}
-
-		return &unaryExpr{val: val, op: typ}
 	}
 
 	panic(fmt.Sprintf("unknown op type: %T", o))

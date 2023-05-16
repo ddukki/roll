@@ -1,6 +1,18 @@
 package main
 
-import "math/rand"
+import (
+	"fmt"
+	"math/rand"
+)
+
+const (
+	SCE_ADD = '+'
+	SCE_SUB = '-'
+	SCE_MUL = '*'
+	SCE_DIV = '/'
+
+	SCE_ROLL = 'd'
+)
 
 type op interface {
 	Rune() rune
@@ -16,6 +28,7 @@ var (
 	_ binaryOp = (*SubOp)(nil)
 	_ binaryOp = (*MulOp)(nil)
 	_ binaryOp = (*DivOp)(nil)
+	_ binaryOp = (*RollOp)(nil)
 )
 
 type AddOp struct{}
@@ -67,20 +80,23 @@ var (
 	_ op = (*RollOp)(nil)
 )
 
-type unaryOp interface {
-	op
-	Apply(val int) int
-	PrePost() bool
-}
-
 type RollOp struct{}
 
-func (r *RollOp) Apply(val int) int {
-	return d(val)
-}
+func (r *RollOp) Apply(lhs, rhs int) int {
+	rawRoll := d(rhs)
+	val := lhs * rawRoll
 
-func (r *RollOp) PrePost() bool {
-	return true
+	rollStr := fmt.Sprintf("d%d", rhs)
+	mathStr := fmt.Sprintf("%d", val)
+	if lhs > 1 {
+		rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
+		mathStr = fmt.Sprintf("%d * [%d] = %s", lhs, rawRoll, mathStr)
+	} else {
+		mathStr = "[" + mathStr + "]"
+	}
+
+	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
+	return val
 }
 
 func (m *RollOp) Rune() rune {
