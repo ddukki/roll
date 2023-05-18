@@ -12,10 +12,10 @@ const (
 	SCE_DIV = '/'
 
 	SCE_ROLL = 'd'
-	SCE_KHT  = 'h'
-	SCE_KLT  = 'l'
-	SCE_DHT  = 'H'
-	SCE_DLT  = 'L'
+	SCE_KHV  = 'h'
+	SCE_KLV  = 'l'
+	SCE_DHV  = 'H'
+	SCE_DLV  = 'L'
 )
 
 type op interface {
@@ -49,10 +49,10 @@ var (
 		SCE_MUL,
 		SCE_DIV,
 		SCE_ROLL,
-		SCE_KHT,
-		SCE_KLT,
-		SCE_DHT,
-		SCE_DLT,
+		SCE_KHV,
+		SCE_KLV,
+		SCE_DHV,
+		SCE_DLV,
 	}
 
 	ops = map[rune]op{
@@ -61,10 +61,10 @@ var (
 		SCE_DIV:  &DivOp{},
 		SCE_MUL:  &MulOp{},
 		SCE_ROLL: &RollOp{},
-		SCE_KHT:  &KeepHighestOp{},
-		SCE_KLT:  &KeepLowestOp{},
-		SCE_DHT:  &DropHighestOp{},
-		SCE_DLT:  &DropLowestOp{},
+		SCE_KHV:  &KeepHighestOp{},
+		SCE_KLV:  &KeepLowestOp{},
+		SCE_DHV:  &DropHighestOp{},
+		SCE_DLV:  &DropLowestOp{},
 	}
 )
 
@@ -151,7 +151,7 @@ func (r *KeepHighestOp) Apply(lhs, rhs int) int {
 }
 
 func (k *KeepHighestOp) Rune() rune {
-	return SCE_KHT
+	return SCE_KHV
 }
 
 type KeepLowestOp struct{}
@@ -180,7 +180,7 @@ func (r *KeepLowestOp) Apply(lhs, rhs int) int {
 }
 
 func (k *KeepLowestOp) Rune() rune {
-	return SCE_KLT
+	return SCE_KLV
 }
 
 type DropHighestOp struct{}
@@ -211,7 +211,7 @@ func (r *DropHighestOp) Apply(lhs, rhs int) int {
 }
 
 func (k *DropHighestOp) Rune() rune {
-	return SCE_DHT
+	return SCE_DHV
 }
 
 type DropLowestOp struct{}
@@ -243,7 +243,7 @@ func (r *DropLowestOp) Apply(lhs, rhs int) int {
 }
 
 func (k *DropLowestOp) Rune() rune {
-	return SCE_DLT
+	return SCE_DLV
 }
 
 // d returns a value between 1 and i inclusive.
