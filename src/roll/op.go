@@ -12,10 +12,10 @@ const (
 	SCE_DIV = '/'
 
 	SCE_ROLL = 'd'
-	SCE_KHV  = 'h'
-	SCE_KLV  = 'l'
-	SCE_DHV  = 'H'
-	SCE_DLV  = 'L'
+	SCE_MAX  = 'x'
+	SCE_MIN  = 'n'
+	SCE_DHV  = 'h'
+	SCE_DLV  = 'l'
 )
 
 type op interface {
@@ -33,8 +33,8 @@ var (
 	_ binaryOp = (*MulOp)(nil)
 	_ binaryOp = (*DivOp)(nil)
 	_ binaryOp = (*RollOp)(nil)
-	_ binaryOp = (*KeepHighestOp)(nil)
-	_ binaryOp = (*KeepLowestOp)(nil)
+	_ binaryOp = (*MaxOp)(nil)
+	_ binaryOp = (*MinOp)(nil)
 )
 
 type AddOp struct{}
@@ -49,8 +49,8 @@ var (
 		SCE_MUL,
 		SCE_DIV,
 		SCE_ROLL,
-		SCE_KHV,
-		SCE_KLV,
+		SCE_MAX,
+		SCE_MIN,
 		SCE_DHV,
 		SCE_DLV,
 	}
@@ -61,44 +61,32 @@ var (
 		SCE_DIV:  &DivOp{},
 		SCE_MUL:  &MulOp{},
 		SCE_ROLL: &RollOp{},
-		SCE_KHV:  &KeepHighestOp{},
-		SCE_KLV:  &KeepLowestOp{},
+		SCE_MAX:  &MaxOp{},
+		SCE_MIN:  &MinOp{},
 		SCE_DHV:  &DropHighestOp{},
 		SCE_DLV:  &DropLowestOp{},
 	}
 )
 
-func (a *AddOp) Apply(lhs int, rhs int) int {
-	return lhs + rhs
-}
-func (s *SubOp) Apply(lhs int, rhs int) int {
-	return lhs - rhs
-}
-func (d *DivOp) Apply(lhs int, rhs int) int {
-	return lhs / rhs
-}
-func (m *MulOp) Apply(lhs int, rhs int) int {
-	return lhs * rhs
-}
+func (a *AddOp) Apply(lhs int, rhs int) int { return lhs + rhs }
+func (s *SubOp) Apply(lhs int, rhs int) int { return lhs - rhs }
+func (d *DivOp) Apply(lhs int, rhs int) int { return lhs / rhs }
+func (m *MulOp) Apply(lhs int, rhs int) int { return lhs * rhs }
 
-func (a *AddOp) Rune() rune {
-	return SCE_ADD
-}
-func (s *SubOp) Rune() rune {
-	return SCE_SUB
-}
-func (d *DivOp) Rune() rune {
-	return SCE_DIV
-}
-func (m *MulOp) Rune() rune {
-	return SCE_MUL
-}
+func (a *AddOp) Rune() rune { return SCE_ADD }
+func (s *SubOp) Rune() rune { return SCE_SUB }
+func (d *DivOp) Rune() rune { return SCE_DIV }
+func (m *MulOp) Rune() rune { return SCE_MUL }
 
 var (
 	_ op = (*RollOp)(nil)
 )
 
 type RollOp struct{}
+type MaxOp struct{}
+type MinOp struct{}
+type DropHighestOp struct{}
+type DropLowestOp struct{}
 
 func (r *RollOp) Apply(lhs, rhs int) int {
 	rolls := make([]int, lhs)
@@ -121,13 +109,7 @@ func (r *RollOp) Apply(lhs, rhs int) int {
 	return val
 }
 
-func (m *RollOp) Rune() rune {
-	return SCE_ROLL
-}
-
-type KeepHighestOp struct{}
-
-func (r *KeepHighestOp) Apply(lhs, rhs int) int {
+func (mx *MaxOp) Apply(lhs, rhs int) int {
 	rolls := make([]int, lhs)
 	var val int
 	for i := range rolls {
@@ -137,7 +119,7 @@ func (r *KeepHighestOp) Apply(lhs, rhs int) int {
 		}
 	}
 
-	rollStr := fmt.Sprintf("h%d", rhs)
+	rollStr := fmt.Sprintf("%c%d", mx.Rune(), rhs)
 	mathStr := fmt.Sprintf("%d", val)
 	if lhs > 1 {
 		rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
@@ -150,13 +132,7 @@ func (r *KeepHighestOp) Apply(lhs, rhs int) int {
 	return val
 }
 
-func (k *KeepHighestOp) Rune() rune {
-	return SCE_KHV
-}
-
-type KeepLowestOp struct{}
-
-func (r *KeepLowestOp) Apply(lhs, rhs int) int {
+func (mn *MinOp) Apply(lhs, rhs int) int {
 	rolls := make([]int, lhs)
 	val := rhs + 1
 	for i := range rolls {
@@ -166,7 +142,7 @@ func (r *KeepLowestOp) Apply(lhs, rhs int) int {
 		}
 	}
 
-	rollStr := fmt.Sprintf("l%d", rhs)
+	rollStr := fmt.Sprintf("%c%d", mn.Rune(), rhs)
 	mathStr := fmt.Sprintf("%d", val)
 	if lhs > 1 {
 		rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
@@ -179,13 +155,7 @@ func (r *KeepLowestOp) Apply(lhs, rhs int) int {
 	return val
 }
 
-func (k *KeepLowestOp) Rune() rune {
-	return SCE_KLV
-}
-
-type DropHighestOp struct{}
-
-func (r *DropHighestOp) Apply(lhs, rhs int) int {
+func (dh *DropHighestOp) Apply(lhs, rhs int) int {
 	rolls := make([]int, lhs)
 	var max, val int
 	for i := range rolls {
@@ -198,25 +168,19 @@ func (r *DropHighestOp) Apply(lhs, rhs int) int {
 
 	val -= max
 
-	rollStr := fmt.Sprintf("H%d", rhs)
+	rollStr := fmt.Sprintf("%c%d", dh.Rune(), rhs)
 	if lhs <= 1 {
 		panic("there must be more than one die rolled for dropping!")
 	}
 
 	rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-	mathStr := fmt.Sprintf("sum%+v - max<%d> = %d", rolls, max, val)
+	mathStr := fmt.Sprintf("sum%+v - max::%d = %d", rolls, max, val)
 
 	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
 	return val
 }
 
-func (k *DropHighestOp) Rune() rune {
-	return SCE_DHV
-}
-
-type DropLowestOp struct{}
-
-func (r *DropLowestOp) Apply(lhs, rhs int) int {
+func (dl *DropLowestOp) Apply(lhs, rhs int) int {
 	rolls := make([]int, lhs)
 	min := rhs + 1
 	var val int
@@ -230,23 +194,23 @@ func (r *DropLowestOp) Apply(lhs, rhs int) int {
 
 	val -= min
 
-	rollStr := fmt.Sprintf("L%d", rhs)
+	rollStr := fmt.Sprintf("%c%d", dl.Rune(), rhs)
 	if lhs <= 1 {
 		panic("there must be more than one die rolled for dropping!")
 	}
 
 	rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-	mathStr := fmt.Sprintf("sum%+v - max<%d> = %d", rolls, min, val)
+	mathStr := fmt.Sprintf("sum%+v - min::%d = %d", rolls, min, val)
 
 	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
 	return val
 }
 
-func (k *DropLowestOp) Rune() rune {
-	return SCE_DLV
-}
+func (m *RollOp) Rune() rune        { return SCE_ROLL }
+func (k *MaxOp) Rune() rune         { return SCE_MAX }
+func (k *MinOp) Rune() rune         { return SCE_MIN }
+func (k *DropHighestOp) Rune() rune { return SCE_DHV }
+func (k *DropLowestOp) Rune() rune  { return SCE_DLV }
 
 // d returns a value between 1 and i inclusive.
-func d(i int) int {
-	return 1 + rand.Intn(i)
-}
+func d(i int) int { return 1 + rand.Intn(i) }
