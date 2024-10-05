@@ -50,14 +50,14 @@ roll 4d8
 
 ## Complex Dice Expressions
 
-In some cases, the max or min value of a set of rolls may be desired, instead of the sum of all dice. Or, it may be desired that those values be removed from the sum. These operations can be done by using `h`, `H`, `l`, and `L`.
+In some cases, the max or min value of a set of rolls may be desired, instead of the sum of all dice. Or, it may be desired that those values be removed from the sum. These operations can be done by using `x`, `h`, `n`, and `l`.
 
 | Expression | Description |
 |---|---|
-| h | Keep highest (max) of a multi-dice roll |
-| H | Drop highest from a multi-dice roll sum |
-| l | Keep lowest (min) of a multi-dice roll |
-| L | Drop lowest from a multi-dice roll sum |
+| x | Keep highest (max) of a multi-dice roll |
+| h | Drop highest from a multi-dice roll sum |
+| n | Keep lowest (min) of a multi-dice roll |
+| l | Drop lowest from a multi-dice roll sum |
 
 ## Possible Future Features
 
