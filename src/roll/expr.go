@@ -19,7 +19,9 @@ type binaryExpr struct {
 }
 
 func (b *binaryExpr) Value() int {
-	return b.op.Apply(b.lhs.Value(), b.rhs.Value())
+	rhs := b.rhs.Value()
+	lhs := b.lhs.Value()
+	return b.op.Apply(lhs, rhs)
 }
 
 func (b *binaryExpr) Validate() {

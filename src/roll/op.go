@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
 )
 
@@ -17,6 +16,26 @@ const (
 	SCE_DHV  = 'h'
 	SCE_DLV  = 'l'
 )
+
+type RollDetails struct {
+	Expr   string
+	Dice   []int
+	Sides  int
+	Total  int
+	Op     string
+	Nested []*RollDetails
+}
+
+var rollStack []*RollDetails
+
+func GetRollDetails() *RollDetails {
+	if len(rollStack) == 0 {
+		return nil
+	}
+	r := rollStack[len(rollStack)-1]
+	rollStack = rollStack[:len(rollStack)-1]
+	return r
+}
 
 type op interface {
 	Rune() rune
@@ -89,6 +108,8 @@ type DropHighestOp struct{}
 type DropLowestOp struct{}
 
 func (r *RollOp) Apply(lhs, rhs int) int {
+	prevRoll := GetRollDetails()
+
 	rolls := make([]int, lhs)
 	var val int
 	for i := range rolls {
@@ -96,20 +117,27 @@ func (r *RollOp) Apply(lhs, rhs int) int {
 		val += rolls[i]
 	}
 
-	rollStr := fmt.Sprintf("d%d", rhs)
-	mathStr := fmt.Sprintf("%d", val)
-	if lhs > 1 {
-		rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-		mathStr = fmt.Sprintf("sum%+v = %s", rolls, mathStr)
-	} else {
-		mathStr = "[" + mathStr + "]"
+	curRoll := &RollDetails{
+		Dice:  rolls,
+		Sides: rhs,
+		Total: val,
+		Op:    "sum",
 	}
 
-	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
+	if prevRoll != nil {
+		curRoll.Nested = append(curRoll.Nested, prevRoll)
+		curRoll.Expr = itoa(lhs) + "d[" + prevRoll.Expr + "]"
+	} else {
+		curRoll.Expr = itoa(lhs) + "d" + itoa(rhs)
+	}
+
+	rollStack = append(rollStack, curRoll)
 	return val
 }
 
 func (mx *MaxOp) Apply(lhs, rhs int) int {
+	prevRoll := GetRollDetails()
+
 	rolls := make([]int, lhs)
 	var val int
 	for i := range rolls {
@@ -118,21 +146,24 @@ func (mx *MaxOp) Apply(lhs, rhs int) int {
 			val = rolls[i]
 		}
 	}
-
-	rollStr := fmt.Sprintf("%c%d", mx.Rune(), rhs)
-	mathStr := fmt.Sprintf("%d", val)
-	if lhs > 1 {
-		rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-		mathStr = fmt.Sprintf("max%+v = %s", rolls, mathStr)
-	} else {
-		mathStr = "[" + mathStr + "]"
+	curRoll := &RollDetails{
+		Expr:  itoa(lhs) + "x" + itoa(rhs),
+		Dice:  rolls,
+		Sides: rhs,
+		Total: val,
+		Op:    "max",
+	}
+	if prevRoll != nil {
+		curRoll.Nested = append(curRoll.Nested, prevRoll)
 	}
 
-	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
+	rollStack = append(rollStack, curRoll)
 	return val
 }
 
 func (mn *MinOp) Apply(lhs, rhs int) int {
+	prevRoll := GetRollDetails()
+
 	rolls := make([]int, lhs)
 	val := rhs + 1
 	for i := range rolls {
@@ -141,21 +172,27 @@ func (mn *MinOp) Apply(lhs, rhs int) int {
 			val = rolls[i]
 		}
 	}
-
-	rollStr := fmt.Sprintf("%c%d", mn.Rune(), rhs)
-	mathStr := fmt.Sprintf("%d", val)
-	if lhs > 1 {
-		rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-		mathStr = fmt.Sprintf("min%+v = %s", rolls, mathStr)
-	} else {
-		mathStr = "[" + mathStr + "]"
+	curRoll := &RollDetails{
+		Expr:  itoa(lhs) + "n" + itoa(rhs),
+		Dice:  rolls,
+		Sides: rhs,
+		Total: val,
+		Op:    "min",
+	}
+	if prevRoll != nil {
+		curRoll.Nested = append(curRoll.Nested, prevRoll)
 	}
 
-	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
+	rollStack = append(rollStack, curRoll)
 	return val
 }
 
 func (dh *DropHighestOp) Apply(lhs, rhs int) int {
+	if lhs <= 1 {
+		panic("there must be more than one die rolled for dropping!")
+	}
+	prevRoll := GetRollDetails()
+
 	rolls := make([]int, lhs)
 	var max, val int
 	for i := range rolls {
@@ -165,22 +202,28 @@ func (dh *DropHighestOp) Apply(lhs, rhs int) int {
 			max = rolls[i]
 		}
 	}
-
 	val -= max
-
-	rollStr := fmt.Sprintf("%c%d", dh.Rune(), rhs)
-	if lhs <= 1 {
-		panic("there must be more than one die rolled for dropping!")
+	curRoll := &RollDetails{
+		Expr:  itoa(lhs) + "h" + itoa(rhs),
+		Dice:  rolls,
+		Sides: rhs,
+		Total: val,
+		Op:    "drop-h",
+	}
+	if prevRoll != nil {
+		curRoll.Nested = append(curRoll.Nested, prevRoll)
 	}
 
-	rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-	mathStr := fmt.Sprintf("sum%+v - max::%d = %d", rolls, max, val)
-
-	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
+	rollStack = append(rollStack, curRoll)
 	return val
 }
 
 func (dl *DropLowestOp) Apply(lhs, rhs int) int {
+	if lhs <= 1 {
+		panic("there must be more than one die rolled for dropping!")
+	}
+	prevRoll := GetRollDetails()
+
 	rolls := make([]int, lhs)
 	min := rhs + 1
 	var val int
@@ -191,18 +234,19 @@ func (dl *DropLowestOp) Apply(lhs, rhs int) int {
 			min = rolls[i]
 		}
 	}
-
 	val -= min
-
-	rollStr := fmt.Sprintf("%c%d", dl.Rune(), rhs)
-	if lhs <= 1 {
-		panic("there must be more than one die rolled for dropping!")
+	curRoll := &RollDetails{
+		Expr:  itoa(lhs) + "l" + itoa(rhs),
+		Dice:  rolls,
+		Sides: rhs,
+		Total: val,
+		Op:    "drop-l",
+	}
+	if prevRoll != nil {
+		curRoll.Nested = append(curRoll.Nested, prevRoll)
 	}
 
-	rollStr = fmt.Sprintf("%d%s", lhs, rollStr)
-	mathStr := fmt.Sprintf("sum%+v - min::%d = %d", rolls, min, val)
-
-	fmt.Printf("Rolling %s: %s\n", rollStr, mathStr)
+	rollStack = append(rollStack, curRoll)
 	return val
 }
 
@@ -214,3 +258,15 @@ func (k *DropLowestOp) Rune() rune  { return SCE_DLV }
 
 // d returns a value between 1 and i inclusive.
 func d(i int) int { return 1 + rand.Intn(i) }
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	s := ""
+	for n > 0 {
+		s = string(rune('0'+n%10)) + s
+		n /= 10
+	}
+	return s
+}
