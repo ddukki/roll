@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
-	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/muesli/reflow/wordwrap"
 )
 
 var focusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -18,6 +18,14 @@ var inputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 var resultStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
 var errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
+var nestedColors = []lipgloss.Style{
+	lipgloss.NewStyle().Foreground(lipgloss.Color("205")), // pink
+	lipgloss.NewStyle().Foreground(lipgloss.Color("75")),  // cyan
+	lipgloss.NewStyle().Foreground(lipgloss.Color("197")), // magenta
+	lipgloss.NewStyle().Foreground(lipgloss.Color("33")),  // blue
+	lipgloss.NewStyle().Foreground(lipgloss.Color("130")), // orange
+}
 
 var baseTableStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
@@ -29,7 +37,8 @@ type rollResult struct {
 	expr       string
 	value      string
 	diceValues []int
-	nested     []string
+	nested     []*RollDetails
+	timestamp  time.Time
 }
 
 type model struct {
@@ -39,7 +48,7 @@ type model struct {
 	result   string
 	err      error
 	history  []rollResult
-	table    table.Model
+	width    int
 	quitting bool
 }
 
@@ -48,28 +57,11 @@ func initialModel() model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	columns := []table.Column{
-		{Title: "Expression", Width: 50},
-		{Title: "Total", Width: 8},
-	}
-	tbl := table.New(
-		table.WithColumns(columns),
-		table.WithHeight(12),
-		table.WithWidth(60),
-	)
-	styles := table.DefaultStyles()
-	styles.Header = styles.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(false)
-	tbl.SetStyles(styles)
-
-	return model{spinner: s, table: tbl}
+	return model{spinner: s, width: 80}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.ClearScreen
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -107,17 +99,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				value:      msg.value,
 				diceValues: msg.dice,
 				nested:     msg.nested,
+				timestamp:  msg.timestamp,
 			})
 			if len(m.history) > maxHistory {
 				m.history = m.history[len(m.history)-maxHistory:]
 			}
-			m.table.SetRows(buildTableRows(m.history))
 		}
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
 		return m, nil
 	default:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		m.table, _ = m.table.Update(msg)
 		return m, cmd
 	}
 	return m, nil
@@ -156,7 +150,8 @@ func (m model) View() tea.View {
 	}
 
 	s += "\n"
-	s += baseTableStyle.Render(m.table.View()) + "\n"
+	s += renderHistory(m.history, m.width)
+	s += "\n\n"
 
 	s += "\n  "
 	s += helpStyle.Render("Enter: roll • Backspace: delete • q: quit")
@@ -168,45 +163,117 @@ func (m model) View() tea.View {
 	return v
 }
 
-func buildTableRows(history []rollResult) []table.Row {
-	rows := make([]table.Row, 0, len(history))
-	for i := len(history) - 1; i >= 0; i-- {
-		r := history[i]
-		display := formatRollResult(r)
-		rows = append(rows, table.Row{display, r.value})
-	}
-	return rows
-}
-
-func formatDice(dice []int) string {
-	if len(dice) == 0 {
+func renderHistory(history []rollResult, width int) string {
+	if len(history) == 0 {
 		return ""
 	}
-	s := ""
-	for i, d := range dice {
-		if i > 0 {
-			s += ", "
-		}
-		s += fmt.Sprintf("%d", d)
+
+	wrapWidth := width - 4
+	if wrapWidth <= 0 {
+		wrapWidth = 60
 	}
-	return s
+
+	var wrappedLines []string
+
+	for i := len(history) - 1; i >= 0; i-- {
+		r := history[i]
+
+		ts := r.timestamp.Format("2006-01-02 15:04:05")
+		wrappedLines = append(wrappedLines, ts)
+
+		colorIdx := 0
+		prevColor := resultStyle // for first line, use resultStyle as "previous"
+		prevTotal := ""
+
+		// Subtotals
+		for j := 0; j < len(r.nested); j++ {
+			n := r.nested[j]
+			currentTotal := fmt.Sprintf("%d", n.Total)
+
+			// For first subtotal: no previous color, use plain. For others: use prevColor
+			var countStyle lipgloss.Style
+			if j == 0 {
+				countStyle = lipgloss.NewStyle() // plain, no color
+			} else {
+				countStyle = prevColor
+			}
+			colorForTotal := nestedColors[colorIdx%len(nestedColors)]
+
+			line := formatRollLineTwoColors(n.Expr, currentTotal, n.Dice, "Subtotal", prevTotal, countStyle, colorForTotal)
+			wrapped := wordwrap.String(line, wrapWidth)
+			parts := strings.Split(wrapped, "\n")
+			for k, part := range parts {
+				if k > 0 {
+					part = "  " + part
+				}
+				wrappedLines = append(wrappedLines, part)
+			}
+
+			prevTotal = currentTotal
+			prevColor = colorForTotal
+			colorIdx++
+		}
+
+		// Total line - use prevColor for count, resultStyle for final total
+		totalLine := formatRollLineTwoColors(r.expr, r.value, r.diceValues, "Total", prevTotal, prevColor, resultStyle)
+		wrapped := wordwrap.String(totalLine, wrapWidth)
+		parts := strings.Split(wrapped, "\n")
+		for k, part := range parts {
+			if k > 0 {
+				// Wrapped continuation lines: no extra styling
+				wrappedLines = append(wrappedLines, "  "+part)
+			} else {
+				wrappedLines = append(wrappedLines, part)
+			}
+		}
+
+		if i > 0 {
+			wrappedLines = append(wrappedLines, "")
+		}
+	}
+
+	result := lipgloss.JoinVertical(
+		lipgloss.Left,
+		wrappedLines...,
+	)
+
+	return baseTableStyle.Render(result)
 }
 
-func formatRollResult(r rollResult) string {
-	var parts []string
-	parts = append(parts, formatDice(r.diceValues))
-	for _, n := range r.nested {
-		parts = append(parts, n)
+func formatRollLineTwoColors(expr, total string, dice []int, label, countVal string, countStyle, totalStyle lipgloss.Style) string {
+	var diceParts []string
+	for _, d := range dice {
+		diceParts = append(diceParts, fmt.Sprintf("%d", d))
 	}
-	return r.expr + " = " + strings.Join(parts, " <- ")
+	diceStr := strings.Join(diceParts, ", ")
+
+	// Use countVal if provided, otherwise parse from expression
+	countStr := countVal
+	if countStr == "" {
+		exprParts := strings.Split(expr, "d")
+		countStr = exprParts[0]
+	}
+
+	// Parse expression for sides
+	exprParts := strings.Split(expr, "d")
+	sideStr := ""
+	if len(exprParts) > 1 {
+		sideStr = "d" + exprParts[1]
+	}
+
+	countColored := countStyle.Render(countStr)
+	totalColored := totalStyle.Render(total)
+
+	return fmt.Sprintf("%s (%s%s): [%s] = %s", label, countColored, sideStr, diceStr, totalColored)
 }
 
 type doneMsg struct {
-	expr   string
-	value  string
-	dice   []int
-	nested []string
-	err    error
+	expr      string
+	value     string
+	dice      []int
+	nested    []*RollDetails
+	timestamp time.Time
+	err       error
 }
 
 func runRoll(expr string) tea.Cmd {
@@ -215,39 +282,37 @@ func runRoll(expr string) tea.Cmd {
 
 		var err error
 		var dice []int
-		var nested []string
+		var nested []*RollDetails
 		var val int
 		var resultExpr string
 
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("%v", r)
-					return
-				}
-			}()
-
-			tkn := tokenize(expr)
-			ast := parse(tkn)
-			ast.Validate()
-			val = ast.Value()
-
-			details := GetRollDetails()
-			if details != nil {
-				dice = details.Dice
-				resultExpr = details.Expr
-				for _, n := range details.Nested {
-					nested = append(nested, fmt.Sprintf("%s:%v", n.Expr, n.Dice))
-				}
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("%v", r)
 			}
 		}()
+
+		tkn := tokenize(expr)
+		ast := parse(tkn)
+		ast.Validate()
+
+		rollDetails := ast.Roll()
+		if rollDetails != nil {
+			val = rollDetails.Total
+			dice = rollDetails.Dice
+			resultExpr = rollDetails.Expr
+			nested = rollDetails.Nested
+			rollStack = append(rollStack, rollDetails)
+		} else {
+			val = ast.Value()
+		}
 
 		displayExpr := resultExpr
 		if displayExpr == "" {
 			displayExpr = expr
 		}
 
-		return doneMsg{expr: displayExpr, value: fmt.Sprintf("%d", val), dice: dice, nested: nested, err: err}
+		return doneMsg{expr: displayExpr, value: fmt.Sprintf("%d", val), dice: dice, nested: nested, timestamp: time.Now(), err: err}
 	}
 }
 
@@ -259,21 +324,29 @@ func main() {
 		tkn := tokenize(expr)
 		ast := parse(tkn)
 		ast.Validate()
-		val := ast.Value()
 
-		details := GetRollDetails()
-		var display string
-		if details != nil {
-			parts := []string{fmt.Sprintf("%v", details.Dice)}
-			for _, n := range details.Nested {
-				parts = append(parts, fmt.Sprintf("%s:%v", n.Expr, n.Dice))
-			}
-			display = details.Expr + " = " + strings.Join(parts, " <- ")
+		rollDetails := ast.Roll()
+		val := 0
+		if rollDetails != nil {
+			val = rollDetails.Total
 		} else {
-			display = expr + " = error"
+			val = ast.Value()
 		}
 
-		fmt.Printf("%-40s %s\n", display, fmt.Sprintf("%d", val))
+		var display string
+		if rollDetails != nil {
+			lines := []string{}
+			for i := 0; i < len(rollDetails.Nested); i++ {
+				n := rollDetails.Nested[i]
+				lines = append(lines, fmt.Sprintf("Subtotal %s: [%v] = %d", n.Expr, n.Dice, n.Total))
+			}
+			lines = append(lines, fmt.Sprintf("Total %s: [%v] = %d", rollDetails.Expr, rollDetails.Dice, rollDetails.Total))
+			display = strings.Join(lines, "\n")
+			fmt.Println(display)
+		} else {
+			display = expr + " = " + fmt.Sprintf("%d", val)
+			fmt.Println(display)
+		}
 		return
 	}
 

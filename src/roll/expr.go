@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 )
 
 type expr interface {
 	Value() int
 	Validate()
+	Roll() *RollDetails
 }
 
 var _ expr = (*binaryExpr)(nil)
@@ -19,9 +21,85 @@ type binaryExpr struct {
 }
 
 func (b *binaryExpr) Value() int {
-	rhs := b.rhs.Value()
-	lhs := b.lhs.Value()
-	return b.op.Apply(lhs, rhs)
+	return b.op.Apply(b.lhs.Value(), b.rhs.Value())
+}
+
+func (b *binaryExpr) Roll() *RollDetails {
+	if _, ok := b.op.(*RollOp); ok {
+		oldMode := inRollMode
+		inRollMode = true
+		defer func() { inRollMode = oldMode }()
+
+		type rollStep struct {
+			expr  *binaryExpr
+			sides int
+		}
+		var chain []rollStep
+
+		cur := b
+		for {
+			sides := 0
+			if rhsLit, ok := cur.rhs.(*litValExpr); ok {
+				sides = rhsLit.val
+			} else if rhsBin, ok := cur.rhs.(*binaryExpr); ok {
+				if subRhsLit, ok := rhsBin.rhs.(*litValExpr); ok {
+					sides = subRhsLit.val
+				}
+			}
+			if sides == 0 {
+				sides = 6
+			}
+
+			chain = append(chain, rollStep{expr: cur, sides: sides})
+
+			if subRoll, ok := cur.lhs.(*binaryExpr); ok {
+				if _, isRollOp := subRoll.op.(*RollOp); isRollOp {
+					cur = subRoll
+					continue
+				}
+			}
+			break
+		}
+
+		var finalRoll *RollDetails
+		for i := len(chain) - 1; i >= 0; i-- {
+			step := chain[i]
+			sides := step.sides
+			count := 0
+
+			if i == len(chain)-1 {
+				count = step.expr.lhs.Value()
+			} else {
+				count = finalRoll.Total
+			}
+
+			rolls := make([]int, count)
+			var val int
+			for j := range rolls {
+				rolls[j] = 1 + rand.Intn(sides)
+				val += rolls[j]
+			}
+
+			curRoll := &RollDetails{
+				Dice:  rolls,
+				Sides: sides,
+				Total: val,
+				Op:    "sum",
+				Expr:  fmt.Sprintf("%dd%d", count, sides),
+			}
+			if finalRoll != nil {
+				curRoll.Nested = append(finalRoll.Nested, finalRoll)
+			}
+			rollStack = append(rollStack, curRoll)
+			finalRoll = curRoll
+		}
+
+		return finalRoll
+	}
+
+	b.rhs.Value()
+	b.lhs.Value()
+	return nil
 }
 
 func (b *binaryExpr) Validate() {
@@ -44,7 +122,8 @@ func (lv *litValExpr) Value() int {
 	return lv.val
 }
 
-func (lv *litValExpr) Validate() {}
+func (lv *litValExpr) Validate()          {}
+func (lv *litValExpr) Roll() *RollDetails { return nil }
 
 var _ expr = (*tokenExpr)(nil)
 
@@ -58,12 +137,12 @@ func (t *tokenExpr) Value() int {
 
 func (t *tokenExpr) Validate() {}
 
-// Tokenize tokenizes the stored token once, breaking the token with the given
-// op. If the given op is not present in the stored token, the token expression
-// is returned with no changes. Otherwise, a new expression is returned,
-// according to the op.
+func (t *tokenExpr) Roll() *RollDetails {
+	return nil
+}
+
 func (t *tokenExpr) Tokenize(o op) expr {
-	ind := strings.Index(t.token, string(o.Rune()))
+	ind := strings.LastIndex(t.token, string(o.Rune()))
 	if ind < 0 {
 		return t
 	}

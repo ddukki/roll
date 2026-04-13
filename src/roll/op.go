@@ -27,6 +27,7 @@ type RollDetails struct {
 }
 
 var rollStack []*RollDetails
+var inRollMode bool
 
 func GetRollDetails() *RollDetails {
 	if len(rollStack) == 0 {
@@ -108,8 +109,6 @@ type DropHighestOp struct{}
 type DropLowestOp struct{}
 
 func (r *RollOp) Apply(lhs, rhs int) int {
-	prevRoll := GetRollDetails()
-
 	rolls := make([]int, lhs)
 	var val int
 	for i := range rolls {
@@ -122,16 +121,12 @@ func (r *RollOp) Apply(lhs, rhs int) int {
 		Sides: rhs,
 		Total: val,
 		Op:    "sum",
+		Expr:  itoa(lhs) + "d" + itoa(rhs),
 	}
 
-	if prevRoll != nil {
-		curRoll.Nested = append(curRoll.Nested, prevRoll)
-		curRoll.Expr = itoa(lhs) + "d[" + prevRoll.Expr + "]"
-	} else {
-		curRoll.Expr = itoa(lhs) + "d" + itoa(rhs)
+	if !inRollMode {
+		rollStack = append(rollStack, curRoll)
 	}
-
-	rollStack = append(rollStack, curRoll)
 	return val
 }
 
