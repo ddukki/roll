@@ -1,95 +1,113 @@
 package main
 
 import (
-  "fmt"
-  "strings"
+	"fmt"
 )
 
+// ===== EXPR INTERFACE =====
+// All expression types must implement this interface.
+// This enables polymorphic handling in the parser and evaluator.
 type expr interface {
-  Value() int
-  Validate()
-  Roll() *RollDetails
+	// Value returns the value of the expression.
+	Value() int
 }
 
+// evalInfo holds all the information about what happened during expression evaluation.
+type evalInfo struct {
+	dri   *diceRollInfo
+	op    op
+	value int
+}
+
+// diceRollInfo stores information about a particular roll of dice.
+type diceRollInfo struct {
+	dieSize int
+	rolls   []int
+}
+
+// Compile-time check that binaryExpr implements expr.
 var _ expr = (*binaryExpr)(nil)
 
+// ===== BINARY EXPRESSION =====
+// binaryExpr represents a binary operation with a left side, right side, and operator.
+// The AST represents mathematical expressions as trees. For example:
+//
+//	"2d6+3"  ->  binaryExpr(lhs=binaryExpr(op=d, lhs=2, rhs=6), op=AddOp, rhs=3)
+//	"2d6*2"  ->  binaryExpr(lhs=binaryExpr(op=d, lhs=2, rhs=6), op=MulOp, rhs=2)
+//
+// The tree is built recursively:
+//
+//	root:          AddOp
+//	             /     \
+//	        RollOp       litValExpr(3)
+//	       /     \
+//	 litValExpr(2)  litValExpr(6)
 type binaryExpr struct {
-  lhs expr
-  rhs expr
-  op  binaryOp
+	lhs      expr      // Left side (e.g., "2d6" in "2d6+3")
+	rhs      expr      // Right side (e.g., "3" in "2d6+3")
+	op       binaryOp  // Operator (e.g., AddOp for "+")
+	evalInfo *evalInfo // nil if not yet evaluated
 }
 
+// binaryExpr.Value evaluates the expression tree.
+// It computes the result by recursively evaluating lhs and rhs,
+// then applying the operator to combine them.
+// For "2d6+3": Value() calls lhs.Value() + rhs.Value()
 func (b *binaryExpr) Value() int {
-  return b.op.Apply(b.lhs.Value(), b.rhs.Value())
+	if b.evalInfo == nil {
+		// Evaluate both sides and apply operator
+		b.evalInfo = b.op.Apply(b.lhs.Value(), b.rhs.Value())
+	}
+	return b.evalInfo.value
 }
 
-func (b *binaryExpr) Roll() *RollDetails {
-  if _, ok := b.op.(*RollOp); ok {
-    oldMode := inRollMode
-    inRollMode = true
-    defer func() { inRollMode = oldMode }()
-
-    chain := buildRollChain(b)
-    return evaluateRollChain(chain)
-  }
-
-  b.rhs.Value()
-  b.lhs.Value()
-  return nil
+// expressionToString converts an expression tree back to a string.
+// This is used for caching and debugging.
+// For example: binaryExpr(lhs=2d6, op=+, rhs=3) -> "2d6+3"
+func expressionToString(e expr) string {
+	switch v := e.(type) {
+	case *binaryExpr:
+		return expressionToString(v.lhs) + string(v.op.Rune()) + expressionToString(v.rhs)
+	case *litValExpr:
+		return fmt.Sprintf("%d", v.val)
+	case *tokenExpr:
+		return v.token
+	default:
+		return ""
+	}
 }
 
-func (b *binaryExpr) Validate() {
-  if _, ok := b.op.(*RollOp); ok {
-    if texpr, ok := b.lhs.(*tokenExpr); ok {
-      if strings.TrimSpace(texpr.token) == "" {
-        b.lhs = &litValExpr{val: 1}
-      }
-    }
-  }
+// getLitValue extracts a literal value from an expression.
+// If the expression is already a literal, returns it directly.
+// Otherwise, evaluates the expression (for cases like "2d6+3" in a larger expression).
+func getLitValue(e expr) int {
+	if lit, ok := e.(*litValExpr); ok {
+		return lit.val
+	}
+	return e.Value()
 }
 
+// ===== LITERAL VALUE EXPRESSION =====
+// litValExpr represents a numeric literal in the AST.
+// This is the leaf node of the expression tree.
 var _ expr = (*litValExpr)(nil)
 
 type litValExpr struct {
-  val int
+	val int
 }
 
-func (lv *litValExpr) Value() int {
-  return lv.val
-}
+// Value returns the stored value.
+func (lv *litValExpr) Value() int { return lv.val }
 
-func (lv *litValExpr) Validate()          {}
-func (lv *litValExpr) Roll() *RollDetails { return nil }
-
+// ===== TOKEN EXPRESSION =====
+// tokenExpr represents an unparsed token string.
+// During tokenization, this holds the raw string that will
+// eventually be split into operators and operands.
 var _ expr = (*tokenExpr)(nil)
 
 type tokenExpr struct {
-  token string
+	token string
 }
 
-func (t *tokenExpr) Value() int {
-  return 0
-}
-
-func (t *tokenExpr) Validate() {}
-
-func (t *tokenExpr) Roll() *RollDetails {
-  return nil
-}
-
-func (t *tokenExpr) Tokenize(o op) expr {
-  ind := strings.LastIndex(t.token, string(o.Rune()))
-  if ind < 0 {
-    return t
-  }
-
-  switch typ := o.(type) {
-  case binaryOp:
-    lhs := &tokenExpr{t.token[:ind]}
-    rhs := &tokenExpr{t.token[ind+1:]}
-
-    return &binaryExpr{lhs: lhs.Tokenize(o), rhs: rhs.Tokenize(o), op: typ}
-  }
-
-  panic(fmt.Sprintf("unknown op type: %T", o))
-}
+// Value() returns 0 for unparsed tokens.
+func (t *tokenExpr) Value() int { return 0 }
