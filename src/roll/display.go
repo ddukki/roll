@@ -23,10 +23,29 @@ func renderExpr(lines *[]string, e expr, isLastStack []bool, isRoot bool) {
 
 	prefix := buildPrefix(isLastStack)
 	var connector string
-	if isLastStack[depth] {
-		connector = "└── "
+	if be, ok := e.(*binaryExpr); ok {
+		switch be.op.(type) {
+		case *AddOp:
+			connector = "+   "
+		case *SubOp:
+			connector = "-   "
+		case *MulOp:
+			connector = "*   "
+		case *DivOp:
+			connector = "/   "
+		default:
+			if isLastStack[depth] {
+				connector = "└── "
+			} else {
+				connector = "├── "
+			}
+		}
 	} else {
-		connector = "├── "
+		if isLastStack[depth] {
+			connector = "└── "
+		} else {
+			connector = "├── "
+		}
 	}
 
 	renderExprBodyWithPrefix(lines, e, isLastStack, prefix, connector)
@@ -54,6 +73,26 @@ func renderExprBody(lines *[]string, e expr, isLastStack []bool) {
 				if hasRhsRoll {
 					renderExpr(lines, v.rhs, newStack, false)
 				}
+			}
+		case *AddOp, *SubOp, *MulOp:
+			var opSymbol string
+			switch v.op.(type) {
+			case *AddOp:
+				opSymbol = "+"
+			case *SubOp:
+				opSymbol = "-"
+			case *MulOp:
+				opSymbol = "*"
+			}
+
+			newStack := append(isLastStack, false)
+			if v.lhs != nil {
+				renderChild(lines, v.lhs, newStack)
+			}
+			*lines = append(*lines, opSymbol)
+			newStack[len(newStack)-1] = true
+			if v.rhs != nil {
+				renderChild(lines, v.rhs, newStack)
 			}
 		default:
 			newStack := append(isLastStack, false)
@@ -92,7 +131,16 @@ func renderExprBodyWithPrefix(lines *[]string, e expr, isLastStack []bool, prefi
 				}
 			}
 		default:
-			*lines = append(*lines, prefix+connector+fmt.Sprintf("= %d", v.evalInfo.value))
+			var opSymbol string
+			switch v.op.(type) {
+			case *AddOp:
+				opSymbol = "+"
+			case *SubOp:
+				opSymbol = "-"
+			case *MulOp:
+				opSymbol = "*"
+			}
+			*lines = append(*lines, prefix+connector+opSymbol+" "+fmt.Sprintf("= %d", v.evalInfo.value))
 
 			newStack := append(isLastStack, false)
 			if v.lhs != nil {
@@ -110,9 +158,28 @@ func renderChild(lines *[]string, e expr, isLastStack []bool) {
 	depth := len(isLastStack) - 1
 
 	prefix := buildPrefix(isLastStack)
-	connector := "└── "
-	if !isLastStack[depth] {
-		connector = "├── "
+	var connector string
+	if be, ok := e.(*binaryExpr); ok {
+		switch be.op.(type) {
+		case *AddOp:
+			connector = "+   "
+		case *SubOp:
+			connector = "-   "
+		case *MulOp:
+			connector = "*   "
+		default:
+			if isLastStack[depth] {
+				connector = "└── "
+			} else {
+				connector = "├── "
+			}
+		}
+	} else {
+		if isLastStack[depth] {
+			connector = "└── "
+		} else {
+			connector = "├── "
+		}
 	}
 
 	switch v := e.(type) {
@@ -138,7 +205,16 @@ func renderChild(lines *[]string, e expr, isLastStack []bool) {
 				}
 			}
 		default:
-			*lines = append(*lines, prefix+connector+fmt.Sprintf("= %d", v.evalInfo.value))
+			var opSymbol string
+			switch v.op.(type) {
+			case *AddOp:
+				opSymbol = "+"
+			case *SubOp:
+				opSymbol = "-"
+			case *MulOp:
+				opSymbol = "*"
+			}
+			*lines = append(*lines, prefix+connector+opSymbol+" "+fmt.Sprintf("= %d", v.evalInfo.value))
 
 			newStack := append(isLastStack, false)
 			if v.lhs != nil {
