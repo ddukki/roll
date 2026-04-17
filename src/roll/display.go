@@ -161,5 +161,5 @@ func RenderHistory(history []rollResult, width int) string {
 		}
 	}
 
-	return BaseTableStyle.Render(strings.Join(lines, "\n"))
+	return BaseTableStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
