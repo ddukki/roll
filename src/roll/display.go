@@ -27,12 +27,12 @@ func (er *exprRenderer) renderResult() string {
 	var lines []string
 	lines = append(lines, fmt.Sprintf("Roll Expression = %s", er.raw))
 	lines = append(lines, fmt.Sprintf("Final Value = %d", er.e.Value()))
-	er.renderExpr(&lines, er.e, make([]bool, 0))
+	lines = append(lines, er.renderExpr(er.e, make([]bool, 0))...)
 	return strings.Join(lines, "\n")
 }
 
 // renderEvalInfo renders out the roll details of a dice roll.
-func (er *exprRenderer) renderEvalInfo(prefix, connector string, ei *evalInfo, countColor, valueColor lipgloss.Style) string {
+func (er *exprRenderer) renderEvalInfo(ei *evalInfo, prefix, connector string, countColor, valueColor lipgloss.Style) string {
 	return fmt.Sprintf(
 		"%s%s%sd%d: [%s] = %s",
 		prefix,
@@ -44,20 +44,22 @@ func (er *exprRenderer) renderEvalInfo(prefix, connector string, ei *evalInfo, c
 	)
 }
 
-func (er *exprRenderer) renderRollExpr(bexpr *binaryExpr, lines *[]string, prefix, connector string, isLastChildStack []bool) {
-	*lines = append(*lines, er.renderEvalInfo(prefix, connector, bexpr.evalInfo, er.popColor(), er.getPreviousColor()))
+func (er *exprRenderer) renderRollExpr(bexpr *binaryExpr, prefix, connector string, isLastChildStack []bool) []string {
+	lines := []string{er.renderEvalInfo(bexpr.evalInfo, prefix, connector, er.popColor(), er.getPreviousColor())}
 
 	if isRollExpr(bexpr.lhs) {
-		er.renderExpr(lines, bexpr.lhs, append(isLastChildStack, true))
+		lines = append(lines, er.renderExpr(bexpr.lhs, append(isLastChildStack, true))...)
 	}
+
+	return lines
 }
 
-func (er *exprRenderer) renderMathExpr(bexpr *binaryExpr, lines *[]string, prefix, connector string, isLastChildStack []bool) {
+func (er *exprRenderer) renderMathExpr(bexpr *binaryExpr, prefix, connector string, isLastChildStack []bool) []string {
 	opSymbol := fmt.Sprintf("%c", bexpr.op.Rune())
-	*lines = append(*lines, fmt.Sprintf("%s%s= %d", prefix, connector, bexpr.evalInfo.value))
+	lines := []string{fmt.Sprintf("%s%s= %d", prefix, connector, bexpr.evalInfo.value)}
 
 	if bexpr.lhs != nil {
-		er.renderExpr(lines, bexpr.lhs, append(isLastChildStack, false))
+		lines = append(lines, er.renderExpr(bexpr.lhs, append(isLastChildStack, false))...)
 	}
 
 	var opConnector string
@@ -69,21 +71,22 @@ func (er *exprRenderer) renderMathExpr(bexpr *binaryExpr, lines *[]string, prefi
 		}
 	}
 
-	*lines = append(*lines, fmt.Sprintf("%s%s%s", prefix, opConnector, opSymbol))
+	lines = append(lines, fmt.Sprintf("%s%s%s", prefix, opConnector, opSymbol))
 
 	if bexpr.rhs != nil {
-		er.renderExpr(lines, bexpr.rhs, append(isLastChildStack, true))
+		lines = append(lines, er.renderExpr(bexpr.rhs, append(isLastChildStack, true))...)
 	}
+
+	return lines
 }
 
-func renderLiteralExpr(lexpr *litValExpr, lines *[]string, prefix, connector string) {
-	*lines = append(*lines, fmt.Sprintf("%s%s%d", prefix, connector, lexpr.val))
+func renderLiteralExpr(lexpr *litValExpr, prefix, connector string) []string {
+	return []string{fmt.Sprintf("%s%s%d", prefix, connector, lexpr.val)}
 }
 
-func (er *exprRenderer) renderExpr(lines *[]string, e expr, isLastChildStack []bool) {
+func (er *exprRenderer) renderExpr(e expr, isLastChildStack []bool) []string {
 	if len(isLastChildStack) == 0 {
-		er.renderExpr(lines, e, append(isLastChildStack, true))
-		return
+		return er.renderExpr(e, append(isLastChildStack, true))
 	}
 
 	depth := len(isLastChildStack) - 1
@@ -100,13 +103,15 @@ func (er *exprRenderer) renderExpr(lines *[]string, e expr, isLastChildStack []b
 	case *binaryExpr:
 		switch v.op.(type) {
 		case *RollOp, *MaxOp, *MinOp, *DropHighestOp, *DropLowestOp:
-			er.renderRollExpr(v, lines, prefix, connector, isLastChildStack)
+			return er.renderRollExpr(v, prefix, connector, isLastChildStack)
 		default:
-			er.renderMathExpr(v, lines, prefix, connector, isLastChildStack)
+			return er.renderMathExpr(v, prefix, connector, isLastChildStack)
 		}
 	case *litValExpr:
-		renderLiteralExpr(v, lines, prefix, connector)
+		return renderLiteralExpr(v, prefix, connector)
 	}
+
+	return nil
 }
 
 // isRollExpr returns true iff the expr involves a dice roll.
