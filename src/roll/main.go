@@ -178,7 +178,8 @@ func main() {
 		}
 
 		ast.Value()
-		fmt.Println(RenderResult(expr, ast))
+		er := &exprRenderer{raw: expr, e: ast}
+		fmt.Println(er.renderResult())
 		return
 	}
 

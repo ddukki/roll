@@ -8,16 +8,31 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-func RenderResult(exprStr string, e expr) string {
+type exprRenderer struct {
+	colorCursor int
+	raw         string
+	e           expr
+}
+
+func (er *exprRenderer) getPreviousColor() lipgloss.Style {
+	return NestedColors[er.colorCursor-1]
+}
+
+func (er *exprRenderer) popColor() lipgloss.Style {
+	er.colorCursor = (er.colorCursor + 1) % len(NestedColors)
+	return NestedColors[er.colorCursor]
+}
+
+func (er *exprRenderer) renderResult() string {
 	var lines []string
-	lines = append(lines, exprStr)
-	lines = append(lines, fmt.Sprintf("= %d", e.Value()))
-	renderExpr(&lines, e, make([]bool, 0))
+	lines = append(lines, fmt.Sprintf("Roll Expression = %s", er.raw))
+	lines = append(lines, fmt.Sprintf("Final Value = %d", er.e.Value()))
+	er.renderExpr(&lines, er.e, make([]bool, 0))
 	return strings.Join(lines, "\n")
 }
 
 // renderEvalInfo renders out the roll details of a dice roll.
-func renderEvalInfo(prefix, connector string, ei *evalInfo, countColor, valueColor lipgloss.Style) string {
+func (er *exprRenderer) renderEvalInfo(prefix, connector string, ei *evalInfo, countColor, valueColor lipgloss.Style) string {
 	return fmt.Sprintf(
 		"%s%s%sd%d: [%s] = %s",
 		prefix,
@@ -29,43 +44,35 @@ func renderEvalInfo(prefix, connector string, ei *evalInfo, countColor, valueCol
 	)
 }
 
-func renderRollExpr(bexpr *binaryExpr, lines *[]string, prefix, connector string, isLastChildStack []bool) {
-	var countColor, valueColor lipgloss.Style
-	*lines = append(*lines, renderEvalInfo(prefix, connector, bexpr.evalInfo, countColor, valueColor))
+func (er *exprRenderer) renderRollExpr(bexpr *binaryExpr, lines *[]string, prefix, connector string, isLastChildStack []bool) {
+	*lines = append(*lines, er.renderEvalInfo(prefix, connector, bexpr.evalInfo, er.popColor(), er.getPreviousColor()))
 
-	hasLhsRoll := isRollExpr(bexpr.lhs)
-	hasRhsRoll := isRollExpr(bexpr.rhs)
-
-	if hasLhsRoll || hasRhsRoll {
-		newStack := append(isLastChildStack, !hasRhsRoll)
-		if hasLhsRoll {
-			renderExpr(lines, bexpr.lhs, newStack)
-		}
-		if hasRhsRoll {
-			renderExpr(lines, bexpr.rhs, newStack)
-		}
+	if isRollExpr(bexpr.lhs) {
+		er.renderExpr(lines, bexpr.lhs, append(isLastChildStack, true))
 	}
 }
 
-func renderMathExpr(bexpr *binaryExpr, lines *[]string, prefix, connector string, isLastStack []bool) {
+func (er *exprRenderer) renderMathExpr(bexpr *binaryExpr, lines *[]string, prefix, connector string, isLastChildStack []bool) {
 	opSymbol := fmt.Sprintf("%c", bexpr.op.Rune())
-	if len(isLastStack) > 1 {
-		*lines = append(*lines, fmt.Sprintf("%s%s= %d", prefix, connector, bexpr.evalInfo.value))
-	}
+	*lines = append(*lines, fmt.Sprintf("%s%s= %d", prefix, connector, bexpr.evalInfo.value))
 
 	if bexpr.lhs != nil {
-		renderExpr(lines, bexpr.lhs, append(isLastStack, false))
+		er.renderExpr(lines, bexpr.lhs, append(isLastChildStack, false))
 	}
 
 	var opConnector string
-	if connector != "" && len(isLastStack) > 1 {
-		opConnector = "│   "
+	if connector != "" {
+		if len(isLastChildStack) > 1 {
+			opConnector = "│   "
+		} else if len(isLastChildStack) > 0 {
+			opConnector = "    "
+		}
 	}
 
 	*lines = append(*lines, fmt.Sprintf("%s%s%s", prefix, opConnector, opSymbol))
 
 	if bexpr.rhs != nil {
-		renderExpr(lines, bexpr.rhs, append(isLastStack, true))
+		er.renderExpr(lines, bexpr.rhs, append(isLastChildStack, true))
 	}
 }
 
@@ -73,9 +80,9 @@ func renderLiteralExpr(lexpr *litValExpr, lines *[]string, prefix, connector str
 	*lines = append(*lines, fmt.Sprintf("%s%s%d", prefix, connector, lexpr.val))
 }
 
-func renderExpr(lines *[]string, e expr, isLastChildStack []bool) {
+func (er *exprRenderer) renderExpr(lines *[]string, e expr, isLastChildStack []bool) {
 	if len(isLastChildStack) == 0 {
-		renderExpr(lines, e, append(isLastChildStack, false))
+		er.renderExpr(lines, e, append(isLastChildStack, true))
 		return
 	}
 
@@ -93,9 +100,9 @@ func renderExpr(lines *[]string, e expr, isLastChildStack []bool) {
 	case *binaryExpr:
 		switch v.op.(type) {
 		case *RollOp, *MaxOp, *MinOp, *DropHighestOp, *DropLowestOp:
-			renderRollExpr(v, lines, prefix, connector, isLastChildStack)
+			er.renderRollExpr(v, lines, prefix, connector, isLastChildStack)
 		default:
-			renderMathExpr(v, lines, prefix, connector, isLastChildStack)
+			er.renderMathExpr(v, lines, prefix, connector, isLastChildStack)
 		}
 	case *litValExpr:
 		renderLiteralExpr(v, lines, prefix, connector)
@@ -114,11 +121,11 @@ func isRollExpr(e expr) bool {
 }
 
 func buildPrefix(isLastStack []bool) string {
-	if len(isLastStack) < 2 {
+	if len(isLastStack) == 0 {
 		return ""
 	}
 	var sb strings.Builder
-	for i := 1; i < len(isLastStack)-1; i++ {
+	for i := 0; i < len(isLastStack)-1; i++ {
 		if isLastStack[i] {
 			sb.WriteString("    ")
 		} else {
@@ -145,8 +152,10 @@ func RenderHistory(history []rollResult, width int) string {
 
 	for i := len(history) - 1; i >= 0; i-- {
 		r := history[i]
+
+		er := &exprRenderer{raw: r.expr, e: r.ast}
 		lines = append(lines, r.timestamp.Format("2006-01-02 15:04:05"))
-		lines = append(lines, RenderResult(r.expr, r.ast))
+		lines = append(lines, er.renderResult())
 		if i > 0 {
 			lines = append(lines, "")
 		}
